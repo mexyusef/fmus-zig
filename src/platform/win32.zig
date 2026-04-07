@@ -163,11 +163,13 @@ pub const MONITOR_DEFAULTTONEAREST: DWORD = 0x00000002;
 pub const BI_RGB: DWORD = 0;
 pub const DIB_RGB_COLORS: UINT = 0;
 pub const CF_UNICODETEXT: UINT = 13;
+pub const CF_DIB: UINT = 8;
 pub const GMEM_MOVEABLE: UINT = 0x0002;
 pub const SM_CXSCREEN: INT = 0;
 pub const SM_CYSCREEN: INT = 1;
 pub const VK_F11: INT = 0x7A;
 pub const VK_F10: INT = 0x79;
+pub const VK_F3: INT = 0x72;
 pub const VK_F12: INT = 0x7B;
 
 pub const Rect = extern struct {

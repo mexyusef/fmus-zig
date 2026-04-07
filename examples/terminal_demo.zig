@@ -66,9 +66,11 @@ pub fn main() !void {
     if (std.process.getEnvVarOwned(allocator, "FMUS_TERMINAL_THEME")) |value| {
         defer allocator.free(value);
         if (std.ascii.eqlIgnoreCase(value, "mac_bw") or std.ascii.eqlIgnoreCase(value, "macos_bw")) {
+            config.theme_preset = .mac_bw;
             config.paint_theme = fmus.terminal.paint.themePreset(.mac_bw);
             config.window_style = fmus.terminal.paint.windowStylePreset(.mac_bw);
         } else if (std.ascii.eqlIgnoreCase(value, "amber")) {
+            config.theme_preset = .amber;
             config.paint_theme = fmus.terminal.paint.themePreset(.amber);
             config.window_style = fmus.terminal.paint.windowStylePreset(.amber);
         }

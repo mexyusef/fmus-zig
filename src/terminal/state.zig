@@ -513,6 +513,18 @@ pub const State = struct {
         return self.ring.viewportRow(self.viewport_offset, row_index)[col_index];
     }
 
+    pub fn cellAtAbsolute(self: *const State, row_index: usize, col_index: usize) cell_mod.Cell {
+        if (self.using_alt_screen) {
+            return self.alt_grid.getConst(@min(row_index, self.alt_grid.rows - 1), col_index).*;
+        }
+        return self.ring.getRow(@min(row_index, self.ring.count - 1))[col_index];
+    }
+
+    pub fn scrollbackAbsoluteRows(self: *const State) usize {
+        if (self.using_alt_screen) return self.alt_grid.rows;
+        return self.ring.count;
+    }
+
     pub fn rowWrappedAtView(self: *const State, row_index: usize) bool {
         if (self.using_alt_screen) return false;
         return self.ring.viewportRowWrapped(self.viewport_offset, row_index);

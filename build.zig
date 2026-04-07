@@ -65,6 +65,28 @@ pub fn build(b: *std.Build) void {
     agent_demo.root_module.addImport("fmus", mod);
     b.installArtifact(agent_demo);
 
+    const ws_echo_server_demo = b.addExecutable(.{
+        .name = "fmus-ws-echo-server-demo",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/ws_echo_server_demo.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    ws_echo_server_demo.root_module.addImport("fmus", mod);
+    b.installArtifact(ws_echo_server_demo);
+
+    const ws_echo_client_demo = b.addExecutable(.{
+        .name = "fmus-ws-echo-client-demo",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/ws_echo_client_demo.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    ws_echo_client_demo.root_module.addImport("fmus", mod);
+    b.installArtifact(ws_echo_client_demo);
+
     const zigsaw_demo = b.addExecutable(.{
         .name = "fmus-zigsaw-foundation-demo",
         .root_module = b.createModule(.{
@@ -124,6 +146,14 @@ pub fn build(b: *std.Build) void {
     const run_agent_demo = b.addRunArtifact(agent_demo);
     const agent_demo_step = b.step("example-agent", "Run the fmus agent demo");
     agent_demo_step.dependOn(&run_agent_demo.step);
+
+    const run_ws_echo_server_demo = b.addRunArtifact(ws_echo_server_demo);
+    const ws_echo_server_demo_step = b.step("example-ws-server", "Run the websocket echo server demo");
+    ws_echo_server_demo_step.dependOn(&run_ws_echo_server_demo.step);
+
+    const run_ws_echo_client_demo = b.addRunArtifact(ws_echo_client_demo);
+    const ws_echo_client_demo_step = b.step("example-ws-client", "Run the websocket echo client demo");
+    ws_echo_client_demo_step.dependOn(&run_ws_echo_client_demo.step);
 
     const run_zigsaw_demo = b.addRunArtifact(zigsaw_demo);
     const zigsaw_demo_step = b.step("example-zigsaw", "Run the zigsaw foundation demo");

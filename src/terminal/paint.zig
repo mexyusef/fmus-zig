@@ -10,6 +10,7 @@ pub const Metrics = struct {
     cell_width_px: i32 = 11,
     cell_height_px: i32 = 22,
     padding_px: i32 = 24,
+    top_inset_px: i32 = 0,
     cursor_width_px: i32 = 11,
     cursor_height_px: i32 = 3,
     cursor_bar_width_px: i32 = 2,
@@ -86,6 +87,10 @@ pub fn windowStylePreset(preset: ThemePreset) platform.TextStyle {
     };
 }
 
+fn contentY(metrics: Metrics) i32 {
+    return metrics.padding_px + metrics.top_inset_px;
+}
+
 pub fn paintScreen(canvas: *platform.Canvas, screen: view_mod.ScreenView, metrics: Metrics, theme: Theme) void {
     const default_bg = theme.background_rgb;
     const default_fg = theme.foreground_rgb;
@@ -100,7 +105,7 @@ pub fn paintScreen(canvas: *platform.Canvas, screen: view_mod.ScreenView, metric
         while (col < cols) : (col += 1) {
             const cell = screen.cell(row, col);
             const x = metrics.padding_px + @as(i32, @intCast(col)) * metrics.cell_width_px;
-            const y = metrics.padding_px + @as(i32, @intCast(row)) * metrics.cell_height_px;
+            const y = contentY(metrics) + @as(i32, @intCast(row)) * metrics.cell_height_px;
             var bg = colorToRgb(cell.style.bg, default_bg);
             var fg = colorToRgb(cell.style.fg, default_fg);
             if (cell.style.reverse) {
@@ -143,7 +148,7 @@ pub fn paintScreen(canvas: *platform.Canvas, screen: view_mod.ScreenView, metric
         const cursor_col = screen.cursorCol();
         const cursor_row = screen.cursorRow();
         const cursor_x = metrics.padding_px + @as(i32, @intCast(cursor_col)) * metrics.cell_width_px;
-        const cursor_y = metrics.padding_px + @as(i32, @intCast(cursor_row)) * metrics.cell_height_px;
+        const cursor_y = contentY(metrics) + @as(i32, @intCast(cursor_row)) * metrics.cell_height_px;
         const cursor_cell = screen.cell(cursor_row, cursor_col);
         const cursor_shape = switch (screen.cursorShape()) {
             .block => CursorShape.block,
@@ -192,7 +197,7 @@ pub fn paintFrame(canvas: *platform.Canvas, frame: *const publish_mod.Frame, met
         while (col < cols) : (col += 1) {
             const cell = frame.cell(row, col);
             const x = metrics.padding_px + @as(i32, @intCast(col)) * metrics.cell_width_px;
-            const y = metrics.padding_px + @as(i32, @intCast(row)) * metrics.cell_height_px;
+            const y = contentY(metrics) + @as(i32, @intCast(row)) * metrics.cell_height_px;
             var bg = colorToRgb(cell.style.bg, default_bg);
             var fg = colorToRgb(cell.style.fg, default_fg);
             if (cell.style.reverse) {
@@ -221,7 +226,7 @@ pub fn paintFrame(canvas: *platform.Canvas, frame: *const publish_mod.Frame, met
 
     if (frame.cursor.visible and frame.cursor.row < rows and frame.cursor.col < cols) {
         const cursor_x = metrics.padding_px + @as(i32, @intCast(frame.cursor.col)) * metrics.cell_width_px;
-        const cursor_y = metrics.padding_px + @as(i32, @intCast(frame.cursor.row)) * metrics.cell_height_px;
+        const cursor_y = contentY(metrics) + @as(i32, @intCast(frame.cursor.row)) * metrics.cell_height_px;
         const cursor_cell = frame.cell(frame.cursor.row, frame.cursor.col);
         const cursor_shape = switch (frame.cursor.shape) {
             .block => CursorShape.block,
@@ -264,7 +269,7 @@ pub fn paintSelectionFrame(canvas: *platform.Canvas, frame: *const publish_mod.F
             const cell = frame.cell(row, col);
             if (cell.wide_continuation) continue;
             const x = metrics.padding_px + @as(i32, @intCast(col)) * metrics.cell_width_px;
-            const y = metrics.padding_px + @as(i32, @intCast(row)) * metrics.cell_height_px;
+            const y = contentY(metrics) + @as(i32, @intCast(row)) * metrics.cell_height_px;
             const draw_width = if (cellDisplayWidth(cell) == 2) metrics.cell_width_px * 2 else metrics.cell_width_px;
             canvas.fillRect(x, y, draw_width, metrics.cell_height_px, theme.selection_bg_rgb);
             const fg = theme.selection_fg_rgb orelse colorToRgb(cell.style.fg, theme.foreground_rgb);

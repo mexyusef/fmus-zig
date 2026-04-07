@@ -8,6 +8,8 @@ const paint_mod = @import("paint.zig");
 const pane_mod = @import("pane.zig");
 const publish_mod = @import("publish.zig");
 const shell_mod = @import("shell.zig");
+const settings_mod = @import("settings.zig");
+const toolbar_mod = @import("toolbar.zig");
 const key_encode = @import("key_encode.zig");
 const state_mod = @import("state.zig");
 const platform = @import("../platform.zig");
@@ -39,10 +41,14 @@ pub const Config = struct {
     cols: usize = 110,
     width: i32 = 1120,
     height: i32 = 760,
+    pos_x: ?i32 = null,
+    pos_y: ?i32 = null,
     icon_path: ?[]const u8 = null,
     show_menu: bool = true,
     show_footer: bool = true,
+    show_toolbar: bool = true,
     footer_height_px: i32 = 28,
+    toolbar_height_px: i32 = 30,
     poll_interval_ms: u32 = 16,
     cursor_blink_ms: u32 = 530,
     cwd: ?[]const u8 = null,
@@ -52,6 +58,9 @@ pub const Config = struct {
     window_style: platform.TextStyle = .{},
     paint_metrics: paint_mod.Metrics = .{},
     paint_theme: paint_mod.Theme = .{ .cursor_shape = .block },
+    theme_preset: paint_mod.ThemePreset = .default,
+    persist_state: bool = true,
+    state_file_path: ?[]const u8 = null,
     startup_input: []const u8 = "",
     startup_input_delay_ms: u32 = 120,
     startup_input_mode: StartupInputMode = .direct_pty,
@@ -101,24 +110,41 @@ const WindowsRuntime = struct {
     last_click: ?ClickState = null,
     overlay: overlay_mod.State = .{},
     copy_mode: copy_mode_mod.State = .{},
+    toolbar_hover: ?toolbar_mod.ButtonId = null,
+    toolbar_pressed: ?toolbar_mod.ButtonId = null,
+    state_file_path: ?[]u8 = null,
 
     pub fn init(allocator: std.mem.Allocator, config: Config) !WindowsRuntime {
         debug_mod.reset();
+        var effective_config = config;
+        const resolved_state_path = try resolveStateFilePath(allocator, effective_config);
+        errdefer if (resolved_state_path) |path| allocator.free(path);
+        if (effective_config.persist_state and resolved_state_path != null) {
+            if (settings_mod.load(allocator, resolved_state_path.?)) |saved| {
+                effective_config.width = saved.width;
+                effective_config.height = saved.height;
+                effective_config.pos_x = saved.x;
+                effective_config.pos_y = saved.y;
+                effective_config.theme_preset = saved.theme.toPreset();
+                effective_config.paint_theme = paint_mod.themePreset(effective_config.theme_preset);
+                effective_config.window_style = paint_mod.windowStylePreset(effective_config.theme_preset);
+            } else |_| {}
+        }
         var pane = try pane_mod.Pane.init(allocator, .{
-            .rows = config.rows,
-            .cols = config.cols,
-            .cwd = config.cwd,
+            .rows = effective_config.rows,
+            .cols = effective_config.cols,
+            .cwd = effective_config.cwd,
         });
         errdefer pane.deinit();
         pane.engine.state.theme_colors = .{
-            .fg = colorFromColorref(config.paint_theme.foreground_rgb),
-            .bg = colorFromColorref(config.paint_theme.background_rgb),
-            .cursor = colorFromColorref(config.paint_theme.cursor_rgb),
+            .fg = colorFromColorref(effective_config.paint_theme.foreground_rgb),
+            .bg = colorFromColorref(effective_config.paint_theme.background_rgb),
+            .cursor = colorFromColorref(effective_config.paint_theme.cursor_rgb),
         };
 
         var runtime = WindowsRuntime{
             .allocator = allocator,
-            .config = config,
+            .config = effective_config,
             .pane = pane,
             .frames = undefined,
             .window = undefined,
@@ -129,32 +155,35 @@ const WindowsRuntime = struct {
             .tick_count = 0,
             .cursor_blink_on = true,
             .debug_log_file = null,
+            .state_file_path = resolved_state_path,
         };
         errdefer runtime.status_message.deinit(allocator);
         errdefer runtime.last_footer.deinit(allocator);
         errdefer runtime.last_title.deinit(allocator);
         errdefer runtime.scratch.deinit(allocator);
-        runtime.frames[0] = try publish_mod.Frame.init(allocator, config.rows, config.cols);
+        runtime.frames[0] = try publish_mod.Frame.init(allocator, effective_config.rows, effective_config.cols);
         errdefer runtime.frames[0].deinit();
-        runtime.frames[1] = try publish_mod.Frame.init(allocator, config.rows, config.cols);
+        runtime.frames[1] = try publish_mod.Frame.init(allocator, effective_config.rows, effective_config.cols);
         errdefer runtime.frames[1].deinit();
 
-        if (config.debug_log_path) |path| {
+        if (effective_config.debug_log_path) |path| {
             runtime.debug_log_file = try std.fs.createFileAbsolute(path, .{ .truncate = true });
         }
 
         runtime.window = try platform.Window.init(allocator, .{
-            .title = config.title,
-            .class_name = config.class_name,
-            .width = config.width,
-            .height = config.height,
-            .icon_path = config.icon_path,
+            .title = effective_config.title,
+            .class_name = effective_config.class_name,
+            .width = effective_config.width,
+            .height = effective_config.height,
+            .pos_x = effective_config.pos_x,
+            .pos_y = effective_config.pos_y,
+            .icon_path = effective_config.icon_path,
             .text = "",
-            .style = config.window_style,
-            .show_menu = config.show_menu,
-            .show_footer = config.show_footer,
-            .footer_height_px = config.footer_height_px,
-            .timer_interval_ms = config.poll_interval_ms,
+            .style = effective_config.window_style,
+            .show_menu = effective_config.show_menu,
+            .show_footer = effective_config.show_footer,
+            .footer_height_px = effective_config.footer_height_px,
+            .timer_interval_ms = effective_config.poll_interval_ms,
             .callbacks = .{
                 .on_paint = onPaint,
                 .on_tick = onTick,
@@ -170,14 +199,16 @@ const WindowsRuntime = struct {
             },
             .callback_ctx = null,
         });
+        runtime.updatePaintInsets();
         runtime.applyMeasuredFontMetrics();
-        try runtime.pane.resize(runtime.computeRows(config.height), runtime.computeCols(config.width));
+        try runtime.pane.resize(runtime.computeRows(effective_config.height), runtime.computeCols(effective_config.width));
         try runtime.refreshPublishedFrameLocked(true);
 
         return runtime;
     }
 
     pub fn deinit(self: *WindowsRuntime) void {
+        self.persistState() catch {};
         if (self.debug_log_file) |file| file.close();
         self.window.deinit();
         self.stop_poll.store(true, .seq_cst);
@@ -189,6 +220,7 @@ const WindowsRuntime = struct {
         self.last_title.deinit(self.allocator);
         self.scratch.deinit(self.allocator);
         self.pane.deinit();
+        if (self.state_file_path) |path| self.allocator.free(path);
     }
 
     pub fn spawn(self: *WindowsRuntime, argv: []const []const u8) !void {
@@ -259,6 +291,10 @@ const WindowsRuntime = struct {
         self.debugLog("paint begin", .{});
         const frame = self.activeFrame();
         paint_mod.paintFrame(canvas, frame, self.config.paint_metrics, self.config.paint_theme);
+        if (self.config.show_toolbar and !self.windowIsZen()) {
+            const width = self.window.clientWidth() orelse self.config.width;
+            toolbar_mod.paint(canvas, width, self.config.paint_metrics, self.config.paint_theme, self.config.toolbar_height_px, self.toolbar_hover, self.toolbar_pressed);
+        }
         if (self.mutex.tryLock()) {
             defer self.mutex.unlock();
             if (self.selection_anchor != null and self.selection_head != null and self.pane.engine.state.mouse_tracking == .off) {
@@ -293,7 +329,14 @@ const WindowsRuntime = struct {
         self.debugLog("char cp={d}", .{codepoint});
         self.mutex.lock();
         defer self.mutex.unlock();
-        if (self.overlay.active) return;
+        if (self.overlay.active) {
+            if (self.overlay.mode == .search and codepoint >= 0x20 and codepoint <= 0x7e) {
+                self.overlay.appendQuery(@intCast(codepoint));
+                try self.searchScrollback(false);
+                self.requestRepaint();
+            }
+            return;
+        }
         if (self.copy_mode.isActive()) return;
         self.clearSelection();
         try self.pane.sendKey(event);
@@ -334,6 +377,12 @@ const WindowsRuntime = struct {
         }
         if (mods.ctrl and !mods.shift and !mods.alt and !mods.super_key and vkey == 'P') {
             self.overlay.open(.command_palette);
+            self.requestRepaint();
+            return;
+        }
+        if (mods.ctrl and !mods.shift and !mods.alt and !mods.super_key and vkey == 'F') {
+            self.overlay.open(.search);
+            try self.setStatusMessage("Search scrollback");
             self.requestRepaint();
             return;
         }
@@ -411,6 +460,14 @@ const WindowsRuntime = struct {
                 self.requestRepaint();
                 return;
             },
+            'C' => {
+                self.mutex.lock();
+                defer self.mutex.unlock();
+                try self.window.copyClientScreenshotToClipboard();
+                try self.setStatusMessage("Screenshot copied");
+                self.requestRepaint();
+                return;
+            },
             win32.VK_F11 => try self.handleWindowChromeToggle(.fullscreen),
             win32.VK_F12 => try self.handleWindowChromeToggle(.zen),
             else => {},
@@ -429,6 +486,7 @@ const WindowsRuntime = struct {
         }
         self.mutex.lock();
         defer self.mutex.unlock();
+        self.updatePaintInsets();
         try self.reflowToCurrentClientSize();
         try self.refreshWindowStateLocked(true);
         self.requestRepaint();
@@ -483,10 +541,11 @@ const WindowsRuntime = struct {
 
     fn onMouseEvent(ctx: *anyopaque, ev: input_mod.MouseEvent) !void {
         const self: *WindowsRuntime = @ptrCast(@alignCast(ctx));
-        self.mutex.lock();
-        defer self.mutex.unlock();
         self.last_mouse_x = ev.x;
         self.last_mouse_y = ev.y;
+        if (try self.handleToolbarMouse(ev)) return;
+        self.mutex.lock();
+        defer self.mutex.unlock();
         if (self.overlay.active) return;
         if (self.pane.engine.state.mouse_tracking == .off or !self.pane.engine.state.mouse_sgr) {
             try self.handleLocalSelection(ev);
@@ -511,6 +570,7 @@ const WindowsRuntime = struct {
 
     fn onDestroy(ctx: *anyopaque) !void {
         const self: *WindowsRuntime = @ptrCast(@alignCast(ctx));
+        try self.persistState();
         self.debugLog("window destroy childExited={any} exit_code={any}", .{
             self.pane.childExited(),
             self.pane.ptyExitCode(),
@@ -582,7 +642,8 @@ const WindowsRuntime = struct {
     }
 
     fn computeRows(self: *const WindowsRuntime, height_px: i32) usize {
-        const usable = @max(1, height_px - (self.config.padding_px * 2) - self.window.footerHeight());
+        const toolbar_h = self.toolbarInsetPx();
+        const usable = @max(1, height_px - (self.config.padding_px * 2) - self.window.footerHeight() - toolbar_h);
         return @max(1, @as(usize, @intCast(@divFloor(usable, @max(1, self.config.cell_height_px)))));
     }
 
@@ -736,6 +797,69 @@ const WindowsRuntime = struct {
         self.selection_head = null;
     }
 
+    fn handleToolbarMouse(self: *WindowsRuntime, ev: input_mod.MouseEvent) !bool {
+        if (!self.config.show_toolbar or self.windowIsZen()) return false;
+        const width = self.window.clientWidth() orelse self.config.width;
+        const layout = toolbar_mod.layout(width, self.config.paint_metrics, self.config.toolbar_height_px);
+        const hovered = layout.hitTest(ev.x, ev.y);
+        var needs_repaint = false;
+        if (hovered != self.toolbar_hover) {
+            self.toolbar_hover = hovered;
+            if (hovered) |id| {
+                if (layout.tooltip(id)) |tip| {
+                    self.mutex.lock();
+                    try self.setStatusMessage(tip);
+                    self.mutex.unlock();
+                }
+            }
+            needs_repaint = true;
+        }
+        switch (ev.kind) {
+            .press => if (ev.button == .left and hovered != null) {
+                self.toolbar_pressed = hovered;
+                needs_repaint = true;
+                if (needs_repaint) self.requestRepaint();
+                return true;
+            },
+            .release => if (ev.button == .left and self.toolbar_pressed != null) {
+                const pressed = self.toolbar_pressed;
+                self.toolbar_pressed = null;
+                needs_repaint = true;
+                if (hovered != null and pressed.? == hovered.?) {
+                    try self.runToolbarAction(pressed.?);
+                } else if (needs_repaint) self.requestRepaint();
+                return true;
+            },
+            .move => if (hovered != null or self.toolbar_hover != null or self.toolbar_pressed != null) {
+                if (needs_repaint) self.requestRepaint();
+                return hovered != null or self.toolbar_pressed != null;
+            },
+            else => {},
+        }
+        if (needs_repaint) self.requestRepaint();
+        return hovered != null;
+    }
+
+    fn runToolbarAction(self: *WindowsRuntime, id: toolbar_mod.ButtonId) !void {
+        switch (id) {
+            .screenshot => try self.handleTopLevelFunctionKey(win32.VK_F10),
+            .fullscreen => try self.handleTopLevelFunctionKey(win32.VK_F11),
+            .zen => try self.handleTopLevelFunctionKey(win32.VK_F12),
+            .palette => {
+                self.mutex.lock();
+                defer self.mutex.unlock();
+                self.overlay.open(.command_palette);
+                self.requestRepaint();
+            },
+            .theme => {
+                self.mutex.lock();
+                defer self.mutex.unlock();
+                self.overlay.open(.theme_picker);
+                self.requestRepaint();
+            },
+        }
+    }
+
     fn handleCopyModeKey(self: *WindowsRuntime, vkey: u32, mods: platform.KeyModifiers) !bool {
         _ = mods;
         const frame = self.activeFrame();
@@ -838,7 +962,8 @@ const WindowsRuntime = struct {
     }
 
     fn mouseRowFromClient(self: *const WindowsRuntime, client_y: i32) u16 {
-        const inner_y = client_y - self.config.padding_px;
+        const toolbar_h = self.toolbarInsetPx();
+        const inner_y = client_y - self.config.padding_px - toolbar_h;
         const row = @divFloor(@max(0, inner_y), @max(1, self.config.cell_height_px)) + 1;
         return @intCast(@min(@as(i32, @intCast(self.pane.engine.state.rowCount())), @max(1, row)));
     }
@@ -919,6 +1044,30 @@ const WindowsRuntime = struct {
 
     fn handleOverlayKey(self: *WindowsRuntime, vkey: u32, mods: platform.KeyModifiers) !bool {
         _ = mods;
+        if (self.overlay.mode == .search) {
+            switch (vkey) {
+                win32.VK_ESCAPE => {
+                    self.overlay.close();
+                    self.requestRepaint();
+                    return true;
+                },
+                win32.VK_BACK => {
+                    self.overlay.backspaceQuery();
+                    try self.searchScrollback(false);
+                    self.requestRepaint();
+                    return true;
+                },
+                win32.VK_RETURN, win32.VK_F3, win32.VK_DOWN => {
+                    try self.searchScrollback(true);
+                    return true;
+                },
+                win32.VK_UP => {
+                    try self.searchScrollbackReverse();
+                    return true;
+                },
+                else => return true,
+            }
+        }
         switch (vkey) {
             win32.VK_ESCAPE => {
                 self.overlay.close();
@@ -953,6 +1102,11 @@ const WindowsRuntime = struct {
                 try self.setStatusMessageFmt("Saved {s}", .{std.fs.path.basename(path)});
                 self.overlay.close();
             },
+            .screenshot_clipboard => {
+                try self.window.copyClientScreenshotToClipboard();
+                try self.setStatusMessage("Screenshot copied");
+                self.overlay.close();
+            },
             .toggle_fullscreen => {
                 try self.window.toggleFullscreen();
                 try self.reflowToCurrentClientSize();
@@ -972,6 +1126,10 @@ const WindowsRuntime = struct {
             },
             .open_theme_picker => {
                 self.overlay.open(.theme_picker);
+            },
+            .search_scrollback => {
+                self.overlay.open(.search);
+                try self.setStatusMessage("Search scrollback");
             },
             .theme_default => {
                 try self.applyTheme(.default);
@@ -998,9 +1156,11 @@ const WindowsRuntime = struct {
     }
 
     fn applyTheme(self: *WindowsRuntime, preset: paint_mod.ThemePreset) !void {
+        self.config.theme_preset = preset;
         self.config.paint_theme = paint_mod.themePreset(preset);
         self.config.window_style = paint_mod.windowStylePreset(preset);
         try self.window.applyStyle(self.config.window_style);
+        self.updatePaintInsets();
         self.pane.engine.state.theme_colors = .{
             .fg = colorFromColorref(self.config.paint_theme.foreground_rgb),
             .bg = colorFromColorref(self.config.paint_theme.background_rgb),
@@ -1076,6 +1236,113 @@ const WindowsRuntime = struct {
         const filename = try std.fmt.allocPrint(self.allocator, "fmus-terminal-{d}.png", .{std.time.milliTimestamp()});
         defer self.allocator.free(filename);
         return try std.fs.path.join(self.allocator, &.{ dir, filename });
+    }
+
+    fn windowIsZen(self: *const WindowsRuntime) bool {
+        return self.window.isZen();
+    }
+
+    fn toolbarInsetPx(self: *const WindowsRuntime) i32 {
+        return if (self.config.show_toolbar and !self.windowIsZen()) self.config.toolbar_height_px + 8 else 0;
+    }
+
+    fn updatePaintInsets(self: *WindowsRuntime) void {
+        self.config.paint_metrics.top_inset_px = self.toolbarInsetPx();
+    }
+
+    fn persistState(self: *WindowsRuntime) !void {
+        if (!self.config.persist_state) return;
+        const path = self.state_file_path orelse return;
+        const metrics = self.window.metrics();
+        try settings_mod.save(path, .{
+            .width = metrics.window_rect.right - metrics.window_rect.left,
+            .height = metrics.window_rect.bottom - metrics.window_rect.top,
+            .x = metrics.window_rect.left,
+            .y = metrics.window_rect.top,
+            .theme = settings_mod.ThemeName.fromPreset(self.config.theme_preset),
+        });
+    }
+
+    fn resolveStateFilePath(allocator: std.mem.Allocator, config: Config) !?[]u8 {
+        if (!config.persist_state) return null;
+        if (config.state_file_path) |path| return try allocator.dupe(u8, path);
+        const dir = if (config.cwd) |cwd|
+            try allocator.dupe(u8, cwd)
+        else
+            try std.process.getCwdAlloc(allocator);
+        defer allocator.free(dir);
+        return try std.fs.path.join(allocator, &.{ dir, ".fmus-terminal.json" });
+    }
+
+    fn searchScrollback(self: *WindowsRuntime, close_overlay: bool) !void {
+        const query = self.overlay.queryText();
+        if (query.len == 0) return;
+        if (self.findQueryAbsoluteRow(query)) |row| {
+            self.jumpViewportToAbsoluteRow(row);
+            try self.refreshPublishedFrameLocked(true);
+            if (close_overlay) self.overlay.close();
+            try self.setStatusMessageFmt("Found: {s}", .{query});
+            self.requestRepaint();
+        } else {
+            try self.setStatusMessageFmt("Not found: {s}", .{query});
+        }
+    }
+
+    fn searchScrollbackReverse(self: *WindowsRuntime) !void {
+        const query = self.overlay.queryText();
+        if (query.len == 0) return;
+        if (self.findQueryAbsoluteRowReverse(query)) |row| {
+            self.jumpViewportToAbsoluteRow(row);
+            try self.refreshPublishedFrameLocked(true);
+            try self.setStatusMessageFmt("Found: {s}", .{query});
+            self.requestRepaint();
+        } else {
+            try self.setStatusMessageFmt("Not found: {s}", .{query});
+        }
+    }
+
+    fn findQueryAbsoluteRow(self: *WindowsRuntime, query: []const u8) ?usize {
+        var row: usize = 0;
+        while (row < self.pane.engine.state.scrollbackAbsoluteRows()) : (row += 1) {
+            if (self.absoluteRowContains(row, query)) return row;
+        }
+        return null;
+    }
+
+    fn findQueryAbsoluteRowReverse(self: *WindowsRuntime, query: []const u8) ?usize {
+        var row = self.pane.engine.state.scrollbackAbsoluteRows();
+        while (row > 0) {
+            row -= 1;
+            if (self.absoluteRowContains(row, query)) return row;
+        }
+        return null;
+    }
+
+    fn absoluteRowContains(self: *WindowsRuntime, row: usize, query: []const u8) bool {
+        var line = std.ArrayList(u8).empty;
+        defer line.deinit(self.allocator);
+        var col: usize = 0;
+        while (col < self.pane.engine.state.colCount()) : (col += 1) {
+            const cell = self.pane.engine.state.cellAtAbsolute(row, col);
+            if (cell.wide_continuation) continue;
+            var utf8_buf: [16]u8 = undefined;
+            const cp = if (cell.char == 0) ' ' else cell.char;
+            const len = std.unicode.utf8Encode(cp, &utf8_buf) catch 0;
+            if (len != 0) line.appendSlice(self.allocator, utf8_buf[0..len]) catch return false;
+        }
+        return std.mem.indexOf(u8, line.items, query) != null;
+    }
+
+    fn jumpViewportToAbsoluteRow(self: *WindowsRuntime, abs_row: usize) void {
+        const visible_rows = self.pane.engine.state.rowCount();
+        const total_rows = self.pane.engine.state.scrollbackAbsoluteRows();
+        if (total_rows <= visible_rows) {
+            self.pane.scrollViewportToBottom();
+            return;
+        }
+        const scrollback = total_rows - visible_rows;
+        const top_abs = @min(abs_row, scrollback);
+        self.pane.engine.state.viewport_offset = scrollback - top_abs;
     }
 
 };

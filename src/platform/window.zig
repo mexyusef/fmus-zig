@@ -66,6 +66,8 @@ pub const Config = struct {
     class_name: []const u8 = "FMUSWindow",
     width: i32 = 1120,
     height: i32 = 760,
+    pos_x: ?i32 = null,
+    pos_y: ?i32 = null,
     text: []const u8 = "",
     style: TextStyle = .{},
     icon_path: ?[]const u8 = null,
@@ -108,6 +110,8 @@ const StubWindow = struct {
     }
 
     pub fn requestRepaint(_: *StubWindow) void {}
+    pub fn clientWidth(_: *const StubWindow) ?i32 { return null; }
+    pub fn isZen(_: *const StubWindow) bool { return false; }
 
     pub fn fontMetrics(_: *const StubWindow) FontMetrics {
         return .{};
@@ -143,6 +147,10 @@ const StubWindow = struct {
     pub fn saveClientScreenshotPng(_: *StubWindow, _: []const u8) !void {
         return error.UnsupportedPlatform;
     }
+
+    pub fn copyClientScreenshotToClipboard(_: *StubWindow) !void {
+        return error.UnsupportedPlatform;
+    }
 };
 
 const StubCanvas = struct {
@@ -162,6 +170,8 @@ const WindowsWindow = struct {
     style: TextStyle,
     width_px: i32,
     height_px: i32,
+    pos_x: ?i32 = null,
+    pos_y: ?i32 = null,
     font: win32.HFONT = null,
     font_bold: win32.HFONT = null,
     font_italic: win32.HFONT = null,
@@ -222,6 +232,8 @@ const WindowsWindow = struct {
             .style = config.style,
             .width_px = config.width,
             .height_px = config.height,
+            .pos_x = config.pos_x,
+            .pos_y = config.pos_y,
             .timer_interval_ms = config.timer_interval_ms,
             .footer_height_px = @max(0, config.footer_height_px),
             .show_footer = config.show_footer,
@@ -320,8 +332,8 @@ const WindowsWindow = struct {
             self.class_name.ptr,
             self.title.ptr,
             win32.WS_OVERLAPPEDWINDOW | win32.WS_VISIBLE,
-            win32.CW_USEDEFAULT,
-            win32.CW_USEDEFAULT,
+            self.pos_x orelse win32.CW_USEDEFAULT,
+            self.pos_y orelse win32.CW_USEDEFAULT,
             self.windowWidth(),
             self.windowHeight(),
             null,
@@ -375,6 +387,17 @@ const WindowsWindow = struct {
         if (self.hwnd) |hwnd| {
             _ = self.api.user32.post_message_w(hwnd, WM_FMUS_REPAINT, 0, 0);
         }
+    }
+
+    pub fn clientWidth(self: *const WindowsWindow) ?i32 {
+        const hwnd = self.hwnd orelse return null;
+        var rect: win32.Rect = undefined;
+        if (self.api.user32.get_client_rect(hwnd, &rect) == 0) return null;
+        return rect.right - rect.left;
+    }
+
+    pub fn isZen(self: *const WindowsWindow) bool {
+        return self.zen;
     }
 
     pub fn fontMetrics(self: *const WindowsWindow) FontMetrics {
@@ -501,6 +524,62 @@ const WindowsWindow = struct {
     }
 
     pub fn saveClientScreenshotPng(self: *WindowsWindow, path: []const u8) !void {
+        const capture = try self.captureClientBitmapBgra();
+        defer self.allocator.free(capture.bgra);
+
+        const rgba = try self.allocator.alloc(u8, capture.bgra.len);
+        defer self.allocator.free(rgba);
+        var i: usize = 0;
+        while (i < capture.bgra.len) : (i += 4) {
+            rgba[i + 0] = capture.bgra[i + 2];
+            rgba[i + 1] = capture.bgra[i + 1];
+            rgba[i + 2] = capture.bgra[i + 0];
+            rgba[i + 3] = 0xff;
+        }
+
+        const png_bytes = try png.encodeRgba8Alloc(self.allocator, @intCast(capture.width), @intCast(capture.height), rgba);
+        defer self.allocator.free(png_bytes);
+
+        var file = try std.fs.createFileAbsolute(path, .{ .truncate = true });
+        defer file.close();
+        try file.writeAll(png_bytes);
+    }
+
+    pub fn copyClientScreenshotToClipboard(self: *WindowsWindow) !void {
+        const capture = try self.captureClientBitmapBgra();
+        defer self.allocator.free(capture.bgra);
+
+        const header_size = @sizeOf(win32.BITMAPINFOHEADER);
+        const total_bytes = header_size + capture.bgra.len;
+        const mem = self.api.global_alloc(win32.GMEM_MOVEABLE, total_bytes) orelse return error.GlobalAllocFailed;
+        errdefer _ = self.api.global_free(mem);
+        const ptr = self.api.global_lock(mem) orelse return error.GlobalLockFailed;
+        defer _ = self.api.global_unlock(mem);
+
+        const out_bytes: [*]u8 = @ptrCast(@alignCast(ptr));
+        const header: *win32.BITMAPINFOHEADER = @ptrCast(@alignCast(out_bytes));
+        header.* = .{
+            .biSize = @sizeOf(win32.BITMAPINFOHEADER),
+            .biWidth = capture.width,
+            .biHeight = -capture.height,
+            .biPlanes = 1,
+            .biBitCount = 32,
+            .biCompression = win32.BI_RGB,
+            .biSizeImage = @intCast(capture.bgra.len),
+            .biXPelsPerMeter = 0,
+            .biYPelsPerMeter = 0,
+            .biClrUsed = 0,
+            .biClrImportant = 0,
+        };
+        @memcpy(out_bytes[header_size .. header_size + capture.bgra.len], capture.bgra);
+
+        if (self.api.open_clipboard(self.hwnd) == 0) return error.OpenClipboardFailed;
+        defer _ = self.api.close_clipboard();
+        _ = self.api.empty_clipboard();
+        if (self.api.set_clipboard_data(win32.CF_DIB, mem) == null) return error.SetClipboardFailed;
+    }
+
+    fn captureClientBitmapBgra(self: *WindowsWindow) !struct { width: i32, height: i32, bgra: []u8 } {
         const hwnd = self.hwnd orelse return error.WindowNotReady;
         var rect: win32.Rect = undefined;
         if (self.api.user32.get_client_rect(hwnd, &rect) == 0) return error.GetClientRectFailed;
@@ -536,27 +615,11 @@ const WindowsWindow = struct {
 
         const pixel_count: usize = @intCast(width * height);
         const bgra = try self.allocator.alloc(u8, pixel_count * 4);
-        defer self.allocator.free(bgra);
         if (self.api.gdi32.get_di_bits(memory_dc, bitmap, 0, @intCast(height), bgra.ptr, &info, win32.DIB_RGB_COLORS) == 0) {
+            self.allocator.free(bgra);
             return error.GetDibitsFailed;
         }
-
-        const rgba = try self.allocator.alloc(u8, bgra.len);
-        defer self.allocator.free(rgba);
-        var i: usize = 0;
-        while (i < bgra.len) : (i += 4) {
-            rgba[i + 0] = bgra[i + 2];
-            rgba[i + 1] = bgra[i + 1];
-            rgba[i + 2] = bgra[i + 0];
-            rgba[i + 3] = 0xff;
-        }
-
-        const png_bytes = try png.encodeRgba8Alloc(self.allocator, @intCast(width), @intCast(height), rgba);
-        defer self.allocator.free(png_bytes);
-
-        var file = try std.fs.createFileAbsolute(path, .{ .truncate = true });
-        defer file.close();
-        try file.writeAll(png_bytes);
+        return .{ .width = width, .height = height, .bgra = bgra };
     }
 
     pub fn clientRect(self: *WindowsWindow) ?win32.Rect {

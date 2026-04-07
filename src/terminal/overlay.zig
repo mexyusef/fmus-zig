@@ -5,6 +5,7 @@ const paint_mod = @import("paint.zig");
 pub const Mode = enum {
     command_palette,
     theme_picker,
+    search,
 };
 
 pub const Action = enum {
@@ -18,6 +19,8 @@ pub const Action = enum {
     theme_amber,
     copy,
     paste,
+    screenshot_clipboard,
+    search_scrollback,
 };
 
 pub const Item = struct {
@@ -29,11 +32,14 @@ pub const State = struct {
     active: bool = false,
     mode: Mode = .command_palette,
     selected: usize = 0,
+    query_len: usize = 0,
+    query: [128]u8 = [_]u8{0} ** 128,
 
     pub fn open(self: *State, mode: Mode) void {
         self.active = true;
         self.mode = mode;
         self.selected = 0;
+        if (mode != .search) self.clearQuery();
     }
 
     pub fn close(self: *State) void {
@@ -57,12 +63,35 @@ pub const State = struct {
         if (!self.active or self.selected >= items.len) return null;
         return items[self.selected].action;
     }
+
+    pub fn appendQuery(self: *State, ch: u8) void {
+        if (self.mode != .search) return;
+        if (self.query_len >= self.query.len) return;
+        self.query[self.query_len] = ch;
+        self.query_len += 1;
+    }
+
+    pub fn backspaceQuery(self: *State) void {
+        if (self.mode != .search or self.query_len == 0) return;
+        self.query_len -= 1;
+        self.query[self.query_len] = 0;
+    }
+
+    pub fn queryText(self: *const State) []const u8 {
+        return self.query[0..self.query_len];
+    }
+
+    pub fn clearQuery(self: *State) void {
+        @memset(&self.query, 0);
+        self.query_len = 0;
+    }
 };
 
 pub fn activeItems(mode: Mode) []const Item {
     return switch (mode) {
         .command_palette => &command_palette_items,
         .theme_picker => &theme_items,
+        .search => &search_items,
     };
 }
 
@@ -90,8 +119,16 @@ pub fn paint(canvas: *platform.Canvas, metrics: paint_mod.Metrics, theme: paint_
     const title = switch (state.mode) {
         .command_palette => "Command Palette",
         .theme_picker => "Theme Picker",
+        .search => "Search Scrollback",
     };
     drawUtf8(canvas, panel_x + metrics.cell_width_px, panel_y + @divFloor(metrics.cell_height_px, 2), panel_w - metrics.cell_width_px * 2, title, header_fg, &utf16_buf);
+
+    if (state.mode == .search) {
+        drawUtf8(canvas, panel_x + metrics.cell_width_px * 2, panel_y + metrics.cell_height_px * 3, panel_w - metrics.cell_width_px * 4, "Query:", header_fg, &utf16_buf);
+        drawUtf8(canvas, panel_x + metrics.cell_width_px * 2, panel_y + metrics.cell_height_px * 5, panel_w - metrics.cell_width_px * 4, state.queryText(), selected_fg, &utf16_buf);
+        drawUtf8(canvas, panel_x + metrics.cell_width_px * 2, panel_y + metrics.cell_height_px * 8, panel_w - metrics.cell_width_px * 4, "Enter: jump  Esc: close  Backspace: edit", header_fg, &utf16_buf);
+        return;
+    }
 
     const items = activeItems(state.mode);
     var i: usize = 0;
@@ -132,10 +169,12 @@ fn mixRgb(a: u32, b: u32, t: f32) u32 {
 
 const command_palette_items = [_]Item{
     .{ .label = "Take Screenshot", .action = .screenshot },
+    .{ .label = "Screenshot To Clipboard", .action = .screenshot_clipboard },
     .{ .label = "Toggle Fullscreen", .action = .toggle_fullscreen },
     .{ .label = "Toggle Zen", .action = .toggle_zen },
     .{ .label = "Enter Copy Mode", .action = .enter_copy_mode },
     .{ .label = "Theme Picker", .action = .open_theme_picker },
+    .{ .label = "Search Scrollback", .action = .search_scrollback },
     .{ .label = "Copy Selection", .action = .copy },
     .{ .label = "Paste Clipboard", .action = .paste },
 };
@@ -145,6 +184,8 @@ const theme_items = [_]Item{
     .{ .label = "Mac Black/White", .action = .theme_mac_bw },
     .{ .label = "Amber", .action = .theme_amber },
 };
+
+const search_items = [_]Item{};
 
 test "overlay state navigation works" {
     var state: State = .{};

@@ -11,6 +11,7 @@ pub const engine = @import("terminal/engine.zig");
 pub const snapshot = @import("terminal/snapshot.zig");
 pub const publish = @import("terminal/publish.zig");
 pub const overlay = @import("terminal/overlay.zig");
+pub const toolbar = @import("terminal/toolbar.zig");
 pub const copy_mode = @import("terminal/copy_mode.zig");
 pub const command = @import("terminal/command.zig");
 pub const debug = @import("terminal/debug.zig");
@@ -24,6 +25,7 @@ pub const pty = @import("terminal/pty.zig");
 pub const pane = @import("terminal/pane.zig");
 pub const app = @import("terminal/app.zig");
 pub const shell = @import("terminal/shell.zig");
+pub const settings = @import("terminal/settings.zig");
 pub const window = @import("terminal/window.zig");
 pub const runtime = @import("terminal/runtime.zig");
 
@@ -38,6 +40,7 @@ pub const State = state.State;
 pub const Parser = parser.Parser;
 pub const Engine = engine.Engine;
 pub const Publish = publish;
+pub const Toolbar = toolbar;
 pub const ScreenView = view.ScreenView;
 pub const Input = input;
 pub const KeyEncode = key_encode;
@@ -47,6 +50,7 @@ pub const Pty = pty.Pty;
 pub const Pane = pane.Pane;
 pub const App = app.App;
 pub const Shell = shell;
+pub const Settings = settings;
 pub const Window = window;
 pub const Runtime = runtime.Runtime;
 
@@ -64,6 +68,7 @@ test {
     _ = @import("terminal/snapshot.zig");
     _ = @import("terminal/publish.zig");
     _ = @import("terminal/overlay.zig");
+    _ = @import("terminal/toolbar.zig");
     _ = @import("terminal/copy_mode.zig");
     _ = @import("terminal/command.zig");
     _ = @import("terminal/debug.zig");
@@ -77,6 +82,7 @@ test {
     _ = @import("terminal/pane.zig");
     _ = @import("terminal/app.zig");
     _ = @import("terminal/shell.zig");
+    _ = @import("terminal/settings.zig");
     _ = @import("terminal/window.zig");
     _ = @import("terminal/runtime.zig");
     _ = @import("terminal/headless_tests.zig");
