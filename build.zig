@@ -39,6 +39,21 @@ pub fn build(b: *std.Build) void {
     workflow_demo.root_module.addImport("fmus", mod);
     b.installArtifact(workflow_demo);
 
+    const terminal_demo = b.addExecutable(.{
+        .name = "fmus-terminal-demo",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/terminal_demo.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    terminal_demo.root_module.addImport("fmus", mod);
+    if (target.result.os.tag == .windows) {
+        terminal_demo.subsystem = .Windows;
+    }
+    b.installArtifact(terminal_demo);
+    b.installFile("assets/fmus-terminal-demo.ico", "bin/fmus-terminal-demo.ico");
+
     const agent_demo = b.addExecutable(.{
         .name = "fmus-agent-demo",
         .root_module = b.createModule(.{
@@ -98,6 +113,13 @@ pub fn build(b: *std.Build) void {
     const run_workflow_demo = b.addRunArtifact(workflow_demo);
     const workflow_demo_step = b.step("example-workflow", "Run the fmus workflow demo");
     workflow_demo_step.dependOn(&run_workflow_demo.step);
+
+    const terminal_demo_step = b.step("example-terminal", "Build the fmus terminal demo");
+    terminal_demo_step.dependOn(&terminal_demo.step);
+
+    const run_terminal_demo = b.addRunArtifact(terminal_demo);
+    const terminal_demo_run_step = b.step("run-terminal-demo", "Run the fmus terminal demo");
+    terminal_demo_run_step.dependOn(&run_terminal_demo.step);
 
     const run_agent_demo = b.addRunArtifact(agent_demo);
     const agent_demo_step = b.step("example-agent", "Run the fmus agent demo");

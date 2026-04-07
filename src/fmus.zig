@@ -9,6 +9,8 @@ pub const json = @import("json.zig");
 pub const http = @import("http.zig");
 pub const form = @import("form.zig");
 pub const socket = @import("socket.zig");
+pub const platform = @import("platform.zig");
+pub const terminal = @import("terminal.zig");
 pub const http_server = @import("http_server.zig");
 pub const env = @import("env.zig");
 pub const cfg = @import("cfg.zig");
@@ -82,6 +84,8 @@ test {
     _ = @import("http.zig");
     _ = @import("form.zig");
     _ = @import("socket.zig");
+    _ = @import("platform.zig");
+    _ = @import("terminal.zig");
     _ = @import("http_server.zig");
     _ = @import("env.zig");
     _ = @import("cfg.zig");
