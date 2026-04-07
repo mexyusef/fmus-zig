@@ -54,6 +54,58 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(terminal_demo);
     b.installFile("assets/fmus-terminal-demo.ico", "bin/fmus-terminal-demo.ico");
 
+    const terminal_automation_demo = b.addExecutable(.{
+        .name = "fmus-terminal-automation-demo",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/terminal_automation_demo.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    terminal_automation_demo.root_module.addImport("fmus", mod);
+    if (target.result.os.tag == .windows) {
+        terminal_automation_demo.subsystem = .Windows;
+    }
+    b.installArtifact(terminal_automation_demo);
+    b.installFile("assets/fmus-terminal-demo.ico", "bin/fmus-terminal-demo.ico");
+
+    const terminal_automation_repl = b.addExecutable(.{
+        .name = "fmus-terminal-automation-repl",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/terminal_automation_repl.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    terminal_automation_repl.root_module.addImport("fmus", mod);
+    b.installArtifact(terminal_automation_repl);
+
+    const terminal_visible_automation_demo = b.addExecutable(.{
+        .name = "fmus-terminal-visible-automation-demo",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/terminal_visible_automation_demo.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    terminal_visible_automation_demo.root_module.addImport("fmus", mod);
+    if (target.result.os.tag == .windows) {
+        terminal_visible_automation_demo.subsystem = .Windows;
+    }
+    b.installArtifact(terminal_visible_automation_demo);
+    b.installFile("assets/fmus-terminal-demo.ico", "bin/fmus-terminal-demo.ico");
+
+    const terminal_visible_automation_repl = b.addExecutable(.{
+        .name = "fmus-terminal-visible-automation-repl",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/terminal_visible_automation_repl.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    terminal_visible_automation_repl.root_module.addImport("fmus", mod);
+    b.installArtifact(terminal_visible_automation_repl);
+
     const agent_demo = b.addExecutable(.{
         .name = "fmus-agent-demo",
         .root_module = b.createModule(.{
@@ -86,6 +138,28 @@ pub fn build(b: *std.Build) void {
     });
     ws_echo_client_demo.root_module.addImport("fmus", mod);
     b.installArtifact(ws_echo_client_demo);
+
+    const automation_ws_server_demo = b.addExecutable(.{
+        .name = "fmus-terminal-automation-ws-server-demo",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/terminal_automation_ws_server_demo.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    automation_ws_server_demo.root_module.addImport("fmus", mod);
+    b.installArtifact(automation_ws_server_demo);
+
+    const automation_ws_client_demo = b.addExecutable(.{
+        .name = "fmus-terminal-automation-ws-client-demo",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/terminal_automation_ws_client_demo.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    automation_ws_client_demo.root_module.addImport("fmus", mod);
+    b.installArtifact(automation_ws_client_demo);
 
     const zigsaw_demo = b.addExecutable(.{
         .name = "fmus-zigsaw-foundation-demo",
@@ -143,6 +217,28 @@ pub fn build(b: *std.Build) void {
     const terminal_demo_run_step = b.step("run-terminal-demo", "Run the fmus terminal demo");
     terminal_demo_run_step.dependOn(&run_terminal_demo.step);
 
+    const terminal_automation_demo_step = b.step("example-terminal-automation", "Build the terminal automation window demo");
+    terminal_automation_demo_step.dependOn(&terminal_automation_demo.step);
+
+    const run_terminal_automation_demo = b.addRunArtifact(terminal_automation_demo);
+    const terminal_automation_demo_run_step = b.step("run-terminal-automation-demo", "Run the terminal automation window demo");
+    terminal_automation_demo_run_step.dependOn(&run_terminal_automation_demo.step);
+
+    const run_terminal_automation_repl = b.addRunArtifact(terminal_automation_repl);
+    const terminal_automation_repl_step = b.step("example-terminal-automation-repl", "Run the terminal automation REPL client");
+    terminal_automation_repl_step.dependOn(&run_terminal_automation_repl.step);
+
+    const terminal_visible_automation_demo_step = b.step("example-terminal-visible-automation", "Build the visible terminal automation demo");
+    terminal_visible_automation_demo_step.dependOn(&terminal_visible_automation_demo.step);
+
+    const run_terminal_visible_automation_demo = b.addRunArtifact(terminal_visible_automation_demo);
+    const terminal_visible_automation_demo_run_step = b.step("run-terminal-visible-automation-demo", "Run the visible terminal automation demo");
+    terminal_visible_automation_demo_run_step.dependOn(&run_terminal_visible_automation_demo.step);
+
+    const run_terminal_visible_automation_repl = b.addRunArtifact(terminal_visible_automation_repl);
+    const terminal_visible_automation_repl_step = b.step("example-terminal-visible-automation-repl", "Run the visible terminal automation REPL");
+    terminal_visible_automation_repl_step.dependOn(&run_terminal_visible_automation_repl.step);
+
     const run_agent_demo = b.addRunArtifact(agent_demo);
     const agent_demo_step = b.step("example-agent", "Run the fmus agent demo");
     agent_demo_step.dependOn(&run_agent_demo.step);
@@ -154,6 +250,14 @@ pub fn build(b: *std.Build) void {
     const run_ws_echo_client_demo = b.addRunArtifact(ws_echo_client_demo);
     const ws_echo_client_demo_step = b.step("example-ws-client", "Run the websocket echo client demo");
     ws_echo_client_demo_step.dependOn(&run_ws_echo_client_demo.step);
+
+    const run_automation_ws_server_demo = b.addRunArtifact(automation_ws_server_demo);
+    const automation_ws_server_demo_step = b.step("example-terminal-automation-ws-server", "Run the terminal automation websocket server demo");
+    automation_ws_server_demo_step.dependOn(&run_automation_ws_server_demo.step);
+
+    const run_automation_ws_client_demo = b.addRunArtifact(automation_ws_client_demo);
+    const automation_ws_client_demo_step = b.step("example-terminal-automation-ws-client", "Run the terminal automation websocket client demo");
+    automation_ws_client_demo_step.dependOn(&run_automation_ws_client_demo.step);
 
     const run_zigsaw_demo = b.addRunArtifact(zigsaw_demo);
     const zigsaw_demo_step = b.step("example-zigsaw", "Run the zigsaw foundation demo");

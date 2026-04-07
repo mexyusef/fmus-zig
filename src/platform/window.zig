@@ -87,6 +87,7 @@ pub const CMD_TOGGLE_ZEN: u16 = 0x1002;
 pub const CMD_SCREENSHOT: u16 = 0x1003;
 pub const CMD_COMMAND_PALETTE: u16 = 0x1004;
 pub const CMD_THEME_PICKER: u16 = 0x1005;
+pub const CMD_AUTOMATION_SERVER: u16 = 0x1006;
 
 const StubWindow = struct {
     pub fn init(_: std.mem.Allocator, _: Config) !StubWindow {
@@ -133,6 +134,10 @@ const StubWindow = struct {
     }
 
     pub fn toggleZen(_: *StubWindow) !void {
+        return error.UnsupportedPlatform;
+    }
+
+    pub fn setWindowRect(_: *StubWindow, _: ?i32, _: ?i32, _: ?i32, _: ?i32) !void {
         return error.UnsupportedPlatform;
     }
 
@@ -491,6 +496,23 @@ const WindowsWindow = struct {
             _ = self.api.user32.set_window_pos(hwnd, null, 0, 0, 0, 0, win32.SWP_NOMOVE | win32.SWP_NOSIZE | win32.SWP_NOZORDER | win32.SWP_FRAMECHANGED);
         }
         try self.applyMenuState();
+        self.requestRepaint();
+    }
+
+    pub fn setWindowRect(self: *WindowsWindow, x: ?i32, y: ?i32, width: ?i32, height: ?i32) !void {
+        const hwnd = self.hwnd orelse return error.WindowNotReady;
+        const rect = self.metrics().window_rect;
+        const next_x = x orelse rect.left;
+        const next_y = y orelse rect.top;
+        const next_w = width orelse (rect.right - rect.left);
+        const next_h = height orelse (rect.bottom - rect.top);
+        if (self.api.user32.set_window_pos(hwnd, null, next_x, next_y, next_w, next_h, win32.SWP_NOZORDER) == 0) {
+            return error.SetWindowPosFailed;
+        }
+        self.width_px = next_w;
+        self.height_px = next_h;
+        self.pos_x = next_x;
+        self.pos_y = next_y;
         self.requestRepaint();
     }
 

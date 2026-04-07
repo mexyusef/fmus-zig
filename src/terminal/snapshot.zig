@@ -28,6 +28,34 @@ pub fn renderAlloc(allocator: std.mem.Allocator, state: *const state_mod.State) 
     return out.toOwnedSlice(allocator);
 }
 
+pub fn renderAllAlloc(allocator: std.mem.Allocator, state: *const state_mod.State) ![]u8 {
+    var out = std.ArrayList(u8).empty;
+    defer out.deinit(allocator);
+
+    const rows = state.totalRows();
+    const cols = state.colCount();
+
+    var row_index: usize = 0;
+    while (row_index < rows) : (row_index += 1) {
+        var end = cols;
+        while (end > 0) : (end -= 1) {
+            const tail = state.cellAtAbsolute(row_index, end - 1);
+            if (tail.wide_continuation) continue;
+            if (tail.char != ' ') break;
+        }
+
+        var col_index: usize = 0;
+        while (col_index < end) : (col_index += 1) {
+            const cell = state.cellAtAbsolute(row_index, col_index);
+            if (cell.wide_continuation) continue;
+            try appendCodepointUtf8(&out, allocator, cell.char);
+        }
+        if (row_index + 1 < rows) try out.append(allocator, '\n');
+    }
+
+    return out.toOwnedSlice(allocator);
+}
+
 fn appendCodepointUtf8(out: *std.ArrayList(u8), allocator: std.mem.Allocator, codepoint: u21) !void {
     const cp: u21 = if (codepoint == 0) ' ' else switch (std.unicode.utf8ValidCodepoint(codepoint)) {
         true => codepoint,

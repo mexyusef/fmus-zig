@@ -408,10 +408,10 @@ pub const Pty = struct {
         ensureHiddenConsole();
 
         const cmd_line = try buildCommandLine(allocator, config.argv);
-        defer allocator.free(cmd_line);
+        defer freeWideZ(allocator, cmd_line);
 
         const cwd_wide = try maybeWide(allocator, config.cwd);
-        defer if (cwd_wide) |buf| allocator.free(buf);
+        defer if (cwd_wide) |buf| freeWideZ(allocator, buf);
 
         var startup = std.mem.zeroes(STARTUPINFOEXW);
         startup.StartupInfo.cb = @sizeOf(STARTUPINFOEXW);
@@ -780,16 +780,21 @@ fn argvToScriptCommandLineWindows(
     return try utf8ToWideZ(allocator, buf.items);
 }
 
-fn maybeWide(allocator: std.mem.Allocator, value: ?[]const u8) !?[]u16 {
+fn maybeWide(allocator: std.mem.Allocator, value: ?[]const u8) !?[:0]u16 {
     if (value) |slice| return try utf8ToWideZ(allocator, slice);
     return null;
 }
 
 fn utf8ToWideZ(allocator: std.mem.Allocator, value: []const u8) ![:0]u16 {
-    const tmp = try allocator.alloc(u16, value.len + 1);
-    const len = try std.unicode.utf8ToUtf16Le(tmp[0..value.len], value);
+    const len = try std.unicode.calcUtf16LeLen(value);
+    const tmp = try allocator.alloc(u16, len + 1);
+    _ = try std.unicode.utf8ToUtf16Le(tmp[0..len], value);
     tmp[len] = 0;
     return tmp[0..len :0];
+}
+
+fn freeWideZ(allocator: std.mem.Allocator, value: [:0]u16) void {
+    allocator.free(value[0 .. value.len + 1]);
 }
 
 fn setEnvW(comptime name: []const u8, comptime value: []const u8) void {
@@ -813,7 +818,7 @@ test "windows command line builder quotes node eval args" {
         "-e",
         "console.log(\"hello world\")",
     });
-    defer allocator.free(line);
+    defer freeWideZ(allocator, line);
 
     const roundtrip = try std.unicode.wtf16LeToWtf8Alloc(allocator, line);
     defer allocator.free(roundtrip);
@@ -829,7 +834,7 @@ test "windows command line builder wraps batch scripts through cmd" {
     const line = try buildCommandLine(allocator, &.{
         "C:\\work\\bin\\cc.bat",
     });
-    defer allocator.free(line);
+    defer freeWideZ(allocator, line);
 
     const roundtrip = try std.unicode.wtf16LeToWtf8Alloc(allocator, line);
     defer allocator.free(roundtrip);

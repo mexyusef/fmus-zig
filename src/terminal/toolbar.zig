@@ -3,6 +3,7 @@ const paint_mod = @import("paint.zig");
 const platform = @import("../platform.zig");
 
 pub const ButtonId = enum {
+    automation_server,
     screenshot,
     palette,
     theme,
@@ -34,7 +35,7 @@ pub const LayoutItem = struct {
 };
 
 pub const Layout = struct {
-    items: [5]LayoutItem,
+    items: [6]LayoutItem,
     len: usize = 0,
 
     pub fn hitTest(self: Layout, x: i32, y: i32) ?ButtonId {
@@ -52,23 +53,35 @@ pub const Layout = struct {
     }
 };
 
-pub fn defaultButtons() [5]Button {
-    return .{
-        .{ .id = .screenshot, .icon = "[]", .label = "Shot", .tooltip = "Take screenshot (F10)" },
-        .{ .id = .palette, .icon = ">>", .label = "Cmd", .tooltip = "Open command palette (Ctrl+P)" },
-        .{ .id = .theme, .icon = "**", .label = "Theme", .tooltip = "Open theme picker (Ctrl+T)" },
-        .{ .id = .fullscreen, .icon = "[]", .label = "Full", .tooltip = "Toggle fullscreen (F11)" },
-        .{ .id = .zen, .icon = "--", .label = "Zen", .tooltip = "Toggle zen mode (F12)" },
-    };
+pub fn defaultButtons(include_automation: bool) [6]Button {
+    return if (include_automation)
+        .{
+            .{ .id = .automation_server, .icon = "WS", .label = "Serve", .tooltip = "Start terminal automation server" },
+            .{ .id = .screenshot, .icon = "[]", .label = "Shot", .tooltip = "Take screenshot (F10)" },
+            .{ .id = .palette, .icon = ">>", .label = "Cmd", .tooltip = "Open command palette (Ctrl+P)" },
+            .{ .id = .theme, .icon = "**", .label = "Theme", .tooltip = "Open theme picker (Ctrl+T)" },
+            .{ .id = .fullscreen, .icon = "[]", .label = "Full", .tooltip = "Toggle fullscreen (F11)" },
+            .{ .id = .zen, .icon = "--", .label = "Zen", .tooltip = "Toggle zen mode (F12)" },
+        }
+    else
+        .{
+            .{ .id = .screenshot, .icon = "[]", .label = "Shot", .tooltip = "Take screenshot (F10)" },
+            .{ .id = .palette, .icon = ">>", .label = "Cmd", .tooltip = "Open command palette (Ctrl+P)" },
+            .{ .id = .theme, .icon = "**", .label = "Theme", .tooltip = "Open theme picker (Ctrl+T)" },
+            .{ .id = .fullscreen, .icon = "[]", .label = "Full", .tooltip = "Toggle fullscreen (F11)" },
+            .{ .id = .zen, .icon = "--", .label = "Zen", .tooltip = "Toggle zen mode (F12)" },
+            .{ .id = .zen, .icon = "", .label = "", .tooltip = "" },
+        };
 }
 
-pub fn layout(width_px: i32, metrics: paint_mod.Metrics, toolbar_height_px: i32) Layout {
-    const buttons = defaultButtons();
+pub fn layout(width_px: i32, metrics: paint_mod.Metrics, toolbar_height_px: i32, include_automation: bool) Layout {
+    const buttons = defaultButtons(include_automation);
     var result: Layout = .{ .items = undefined, .len = 0 };
     var x = metrics.padding_px;
     const y = metrics.padding_px;
     const button_h = @max(22, toolbar_height_px - 6);
     for (buttons) |button| {
+        if (button.label.len == 0) continue;
         const w = buttonWidth(button);
         result.items[result.len] = .{
             .button = button,
@@ -86,11 +99,11 @@ pub fn layout(width_px: i32, metrics: paint_mod.Metrics, toolbar_height_px: i32)
     return result;
 }
 
-pub fn paint(canvas: *platform.Canvas, width_px: i32, metrics: paint_mod.Metrics, theme: paint_mod.Theme, toolbar_height_px: i32, hovered: ?ButtonId, pressed: ?ButtonId) void {
+pub fn paint(canvas: *platform.Canvas, width_px: i32, metrics: paint_mod.Metrics, theme: paint_mod.Theme, toolbar_height_px: i32, hovered: ?ButtonId, pressed: ?ButtonId, include_automation: bool) void {
     const bar_y = metrics.padding_px;
     const bar_h = @max(24, toolbar_height_px);
     canvas.fillRect(metrics.padding_px, bar_y, @max(1, width_px - metrics.padding_px * 2), bar_h, mixRgb(theme.background_rgb, theme.foreground_rgb, 0.08));
-    const items = layout(width_px, metrics, toolbar_height_px);
+    const items = layout(width_px, metrics, toolbar_height_px, include_automation);
     for (items.items[0..items.len]) |item| {
         const is_hover = hovered != null and hovered.? == item.button.id;
         const is_pressed = pressed != null and pressed.? == item.button.id;
@@ -132,6 +145,6 @@ fn mixRgb(a: u32, b: u32, t: f32) u32 {
 
 test "toolbar layout hit test works" {
     const metrics = paint_mod.Metrics{};
-    const l = layout(900, metrics, 30);
+    const l = layout(900, metrics, 30, true);
     try std.testing.expect(l.hitTest(metrics.padding_px + 4, metrics.padding_px + 4) != null);
 }

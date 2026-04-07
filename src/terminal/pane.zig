@@ -30,6 +30,7 @@ pub const Pane = struct {
     engine: engine_mod.Engine,
     pty: ?pty_mod.Pty = null,
     cwd: ?[]const u8 = null,
+    shell_type: pty_mod.ShellType = .auto,
 
     pub fn init(allocator: std.mem.Allocator, config: Config) !Pane {
         return .{
@@ -63,13 +64,18 @@ pub const Pane = struct {
 
     pub fn spawn(self: *Pane, argv: []const []const u8) !void {
         if (self.pty) |*existing| existing.deinit();
+        self.shell_type = pty_mod.ShellType.detect(argv);
         self.pty = try pty_mod.Pty.spawn(self.allocator, .{
             .argv = argv,
             .cwd = self.cwd,
             .rows = @intCast(self.engine.state.rowCount()),
             .cols = @intCast(self.engine.state.colCount()),
-            .shell = pty_mod.ShellType.detect(argv),
+            .shell = self.shell_type,
         });
+    }
+
+    pub fn shellType(self: *const Pane) pty_mod.ShellType {
+        return self.shell_type;
     }
 
     pub fn pollOnce(self: *Pane) !usize {

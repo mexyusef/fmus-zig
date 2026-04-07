@@ -15,4 +15,6 @@ dist/
 .env.*
 *.log
 .DS_Store
+.fmus-terminal.json
+.vscode/
 /_legacy

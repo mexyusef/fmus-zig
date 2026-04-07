@@ -1,12 +1,17 @@
 const builtin = @import("builtin");
 const std = @import("std");
 const cell_mod = @import("cell.zig");
+const buffer_mod = @import("buffer.zig");
+const command_tracker_mod = @import("command_tracker.zig");
 const copy_mode_mod = @import("copy_mode.zig");
 const input_mod = @import("input.zig");
+const input_log_mod = @import("input_log.zig");
 const overlay_mod = @import("overlay.zig");
 const paint_mod = @import("paint.zig");
 const pane_mod = @import("pane.zig");
 const publish_mod = @import("publish.zig");
+const shell_observer_mod = @import("shell_observer.zig");
+const snapshot_mod = @import("snapshot.zig");
 const shell_mod = @import("shell.zig");
 const settings_mod = @import("settings.zig");
 const toolbar_mod = @import("toolbar.zig");
@@ -35,6 +40,10 @@ pub const Config = struct {
         window_events,
     };
 
+    pub const UiAction = enum {
+        automation_server,
+    };
+
     title: []const u8 = "FMUS Terminal",
     class_name: []const u8 = "FMUSTerminalWindow",
     rows: usize = 30,
@@ -47,6 +56,7 @@ pub const Config = struct {
     show_menu: bool = true,
     show_footer: bool = true,
     show_toolbar: bool = true,
+    show_automation_button: bool = false,
     footer_height_px: i32 = 28,
     toolbar_height_px: i32 = 30,
     poll_interval_ms: u32 = 16,
@@ -65,11 +75,29 @@ pub const Config = struct {
     startup_input_delay_ms: u32 = 120,
     startup_input_mode: StartupInputMode = .direct_pty,
     debug_log_path: ?[]const u8 = null,
+    on_ui_action: ?*const fn (ctx: *anyopaque, action: UiAction) anyerror!void = null,
+    ui_action_ctx: ?*anyopaque = null,
 };
 
 pub const Runtime = if (builtin.os.tag == .windows) WindowsRuntime else StubRuntime;
 
 const StubRuntime = struct {
+    pub const CursorInfo = struct {
+        row: usize,
+        col: usize,
+        visible: bool,
+    };
+
+    pub const ProcessInfo = struct {
+        exited: bool,
+        exit_code: ?u8,
+    };
+
+    pub const InputLogEntry = input_log_mod.Entry;
+    pub const CommandRecord = command_tracker_mod.CommandRecord;
+    pub const BufferSnapshot = buffer_mod.Snapshot;
+    pub const ShellState = shell_observer_mod.ShellState;
+
     pub fn init(_: std.mem.Allocator, _: Config) !StubRuntime {
         return error.UnsupportedPlatform;
     }
@@ -81,9 +109,50 @@ const StubRuntime = struct {
     pub fn run(_: *StubRuntime) !void {
         return error.UnsupportedPlatform;
     }
+    pub fn sendText(_: *StubRuntime, _: []const u8) !void { return error.UnsupportedPlatform; }
+    pub fn sendCtrl(_: *StubRuntime, _: u8) !void { return error.UnsupportedPlatform; }
+    pub fn sendEscape(_: *StubRuntime, _: []const u8) !void { return error.UnsupportedPlatform; }
+    pub fn resizeTerminal(_: *StubRuntime, _: usize, _: usize) !void { return error.UnsupportedPlatform; }
+    pub fn setWindowRect(_: *StubRuntime, _: ?i32, _: ?i32, _: ?i32, _: ?i32) !void { return error.UnsupportedPlatform; }
+    pub fn toggleFullscreen(_: *StubRuntime) !void { return error.UnsupportedPlatform; }
+    pub fn toggleZen(_: *StubRuntime) !void { return error.UnsupportedPlatform; }
+    pub fn saveScreenshotPng(_: *StubRuntime, _: []const u8) !void { return error.UnsupportedPlatform; }
+    pub fn copyScreenshotToClipboard(_: *StubRuntime) !void { return error.UnsupportedPlatform; }
+    pub fn visibleTextAlloc(_: *StubRuntime, _: std.mem.Allocator) ![]u8 { return error.UnsupportedPlatform; }
+    pub fn scrollbackTextAlloc(_: *StubRuntime, _: std.mem.Allocator) ![]u8 { return error.UnsupportedPlatform; }
+    pub fn metrics(_: *StubRuntime) platform.WindowMetrics { return .{}; }
+    pub fn cursorInfo(_: *StubRuntime) CursorInfo { return .{ .row = 0, .col = 0, .visible = false }; }
+    pub fn titleAlloc(_: *StubRuntime, allocator: std.mem.Allocator) ![]u8 { return allocator.dupe(u8, ""); }
+    pub fn cwdAlloc(_: *StubRuntime, allocator: std.mem.Allocator) ![]u8 { return allocator.dupe(u8, ""); }
+    pub fn processInfo(_: *StubRuntime) ProcessInfo { return .{ .exited = true, .exit_code = null }; }
+    pub fn showStatus(_: *StubRuntime, _: []const u8) !void { return error.UnsupportedPlatform; }
+    pub fn visibleBufferAlloc(_: *StubRuntime, _: std.mem.Allocator) !BufferSnapshot { return error.UnsupportedPlatform; }
+    pub fn scrollbackBufferAlloc(_: *StubRuntime, _: std.mem.Allocator) !BufferSnapshot { return error.UnsupportedPlatform; }
+    pub fn inputLogAlloc(_: *StubRuntime, _: std.mem.Allocator) ![]InputLogEntry { return error.UnsupportedPlatform; }
+    pub fn commandHistoryAlloc(_: *StubRuntime, _: std.mem.Allocator) ![]CommandRecord { return error.UnsupportedPlatform; }
+    pub fn lastCommandAlloc(_: *StubRuntime, allocator: std.mem.Allocator) ![]u8 { return allocator.dupe(u8, ""); }
+    pub fn lastExitCode(_: *StubRuntime) ?u8 { return null; }
+    pub fn shellStateAlloc(_: *StubRuntime, _: std.mem.Allocator) !ShellState { return error.UnsupportedPlatform; }
+    pub fn invokeCommand(_: *StubRuntime, _: []const u8) !void { return error.UnsupportedPlatform; }
 };
 
 const WindowsRuntime = struct {
+    pub const CursorInfo = struct {
+        row: usize,
+        col: usize,
+        visible: bool,
+    };
+
+    pub const ProcessInfo = struct {
+        exited: bool,
+        exit_code: ?u8,
+    };
+
+    pub const InputLogEntry = input_log_mod.Entry;
+    pub const CommandRecord = command_tracker_mod.CommandRecord;
+    pub const BufferSnapshot = buffer_mod.Snapshot;
+    pub const ShellState = shell_observer_mod.ShellState;
+
     allocator: std.mem.Allocator,
     config: Config,
     pane: pane_mod.Pane,
@@ -110,6 +179,9 @@ const WindowsRuntime = struct {
     last_click: ?ClickState = null,
     overlay: overlay_mod.State = .{},
     copy_mode: copy_mode_mod.State = .{},
+    input_log: input_log_mod.Log,
+    command_tracker: command_tracker_mod.Tracker,
+    shell_observer: shell_observer_mod.Observer,
     toolbar_hover: ?toolbar_mod.ButtonId = null,
     toolbar_pressed: ?toolbar_mod.ButtonId = null,
     state_file_path: ?[]u8 = null,
@@ -121,10 +193,14 @@ const WindowsRuntime = struct {
         errdefer if (resolved_state_path) |path| allocator.free(path);
         if (effective_config.persist_state and resolved_state_path != null) {
             if (settings_mod.load(allocator, resolved_state_path.?)) |saved| {
-                effective_config.width = saved.width;
-                effective_config.height = saved.height;
-                effective_config.pos_x = saved.x;
-                effective_config.pos_y = saved.y;
+                if (saved.width >= 320 and saved.height >= 240) {
+                    effective_config.width = saved.width;
+                    effective_config.height = saved.height;
+                }
+                if (saved.width >= 320 and saved.height >= 240) {
+                    effective_config.pos_x = saved.x;
+                    effective_config.pos_y = saved.y;
+                }
                 effective_config.theme_preset = saved.theme.toPreset();
                 effective_config.paint_theme = paint_mod.themePreset(effective_config.theme_preset);
                 effective_config.window_style = paint_mod.windowStylePreset(effective_config.theme_preset);
@@ -152,6 +228,9 @@ const WindowsRuntime = struct {
             .last_title = .empty,
             .last_footer = .empty,
             .status_message = .empty,
+            .input_log = input_log_mod.Log.init(allocator, 512),
+            .command_tracker = command_tracker_mod.Tracker.init(allocator, 256),
+            .shell_observer = try shell_observer_mod.Observer.init(allocator),
             .tick_count = 0,
             .cursor_blink_on = true,
             .debug_log_file = null,
@@ -219,6 +298,9 @@ const WindowsRuntime = struct {
         self.last_footer.deinit(self.allocator);
         self.last_title.deinit(self.allocator);
         self.scratch.deinit(self.allocator);
+        self.shell_observer.deinit();
+        self.input_log.deinit();
+        self.command_tracker.deinit();
         self.pane.deinit();
         if (self.state_file_path) |path| self.allocator.free(path);
     }
@@ -228,6 +310,7 @@ const WindowsRuntime = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
         try self.pane.spawn(argv);
+        self.shell_observer.setShell(self.pane.shellType());
         try self.refreshWindowStateLocked(true);
         try self.ensurePollThread();
     }
@@ -238,6 +321,7 @@ const WindowsRuntime = struct {
         self.window.setCallbackContext(@ptrCast(self));
         self.mutex.lock();
         try self.pane.spawn(launch.argv);
+        self.shell_observer.setShell(self.pane.shellType());
         self.mutex.unlock();
         if (launch.prompt_kick_input.len != 0) {
             std.Thread.sleep(40 * std.time.ns_per_ms);
@@ -267,6 +351,181 @@ const WindowsRuntime = struct {
         try self.window.run();
     }
 
+    pub fn sendText(self: *WindowsRuntime, text: []const u8) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        try self.input_log.append(.text, text);
+        try self.command_tracker.feedInput(text);
+        self.clearSelection();
+        try self.pane.sendInput(text);
+        self.cursor_blink_on = true;
+        self.pane.engine.state.cursor.visible = true;
+        self.pane.scrollViewportToBottom();
+        try self.refreshWindowStateLocked(false);
+    }
+
+    pub fn sendCtrl(self: *WindowsRuntime, ch: u8) !void {
+        if (ch < 'a' or ch > 'z') return error.InvalidControlCharacter;
+        const byte = ch - 'a' + 1;
+        try self.input_log.append(.ctrl, &.{ch});
+        return self.sendText(&.{byte});
+    }
+
+    pub fn sendEscape(self: *WindowsRuntime, bytes: []const u8) !void {
+        self.mutex.lock();
+        errdefer self.mutex.unlock();
+        try self.input_log.append(.escape, bytes);
+        self.mutex.unlock();
+        try self.sendText(bytes);
+    }
+
+    pub fn resizeTerminal(self: *WindowsRuntime, rows: usize, cols: usize) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        try self.pane.resize(rows, cols);
+        self.frames[0].deinit();
+        self.frames[1].deinit();
+        self.frames[0] = try publish_mod.Frame.init(self.allocator, rows, cols);
+        self.frames[1] = try publish_mod.Frame.init(self.allocator, rows, cols);
+        try self.refreshWindowStateLocked(true);
+    }
+
+    pub fn setWindowRect(self: *WindowsRuntime, x: ?i32, y: ?i32, width: ?i32, height: ?i32) !void {
+        try self.window.setWindowRect(x, y, width, height);
+    }
+
+    pub fn toggleFullscreen(self: *WindowsRuntime) !void {
+        try self.window.toggleFullscreen();
+    }
+
+    pub fn toggleZen(self: *WindowsRuntime) !void {
+        try self.window.toggleZen();
+    }
+
+    pub fn saveScreenshotPng(self: *WindowsRuntime, path: []const u8) !void {
+        try self.window.saveClientScreenshotPng(path);
+    }
+
+    pub fn copyScreenshotToClipboard(self: *WindowsRuntime) !void {
+        try self.window.copyClientScreenshotToClipboard();
+    }
+
+    pub fn visibleTextAlloc(self: *WindowsRuntime, allocator: std.mem.Allocator) ![]u8 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.pane.snapshotAlloc(allocator);
+    }
+
+    pub fn scrollbackTextAlloc(self: *WindowsRuntime, allocator: std.mem.Allocator) ![]u8 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return snapshot_mod.renderAllAlloc(allocator, &self.pane.engine.state);
+    }
+
+    pub fn metrics(self: *WindowsRuntime) platform.WindowMetrics {
+        return self.window.metrics();
+    }
+
+    pub fn cursorInfo(self: *WindowsRuntime) CursorInfo {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return .{
+            .row = self.pane.engine.state.cursor.row,
+            .col = self.pane.engine.state.cursor.col,
+            .visible = self.pane.engine.state.cursor.visible,
+        };
+    }
+
+    pub fn titleAlloc(self: *WindowsRuntime, allocator: std.mem.Allocator) ![]u8 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        if (self.pane.engine.state.title) |title| return allocator.dupe(u8, title);
+        return allocator.dupe(u8, self.config.title);
+    }
+
+    pub fn cwdAlloc(self: *WindowsRuntime, allocator: std.mem.Allocator) ![]u8 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        if (self.pane.engine.state.cwd) |cwd| return allocator.dupe(u8, cwd);
+        if (self.shell_observer.cwd.len != 0) return allocator.dupe(u8, self.shell_observer.cwd);
+        if (self.config.cwd) |cwd| return allocator.dupe(u8, cwd);
+        return allocator.dupe(u8, "");
+    }
+
+    pub fn processInfo(self: *WindowsRuntime) ProcessInfo {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return .{
+            .exited = self.pane.childExited(),
+            .exit_code = self.pane.ptyExitCode(),
+        };
+    }
+
+    pub fn visibleBufferAlloc(self: *WindowsRuntime, allocator: std.mem.Allocator) !BufferSnapshot {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return buffer_mod.visibleAlloc(allocator, &self.pane.engine.state);
+    }
+
+    pub fn scrollbackBufferAlloc(self: *WindowsRuntime, allocator: std.mem.Allocator) !BufferSnapshot {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return buffer_mod.scrollbackAlloc(allocator, &self.pane.engine.state);
+    }
+
+    pub fn inputLogAlloc(self: *WindowsRuntime, allocator: std.mem.Allocator) ![]InputLogEntry {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.input_log.cloneEntriesAlloc(allocator);
+    }
+
+    pub fn commandHistoryAlloc(self: *WindowsRuntime, allocator: std.mem.Allocator) ![]CommandRecord {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.command_tracker.historyAlloc(allocator);
+    }
+
+    pub fn lastCommandAlloc(self: *WindowsRuntime, allocator: std.mem.Allocator) ![]u8 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.command_tracker.lastCommandAlloc(allocator);
+    }
+
+    pub fn lastExitCode(self: *WindowsRuntime) ?u8 {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.shell_observer.last_exit_code orelse self.command_tracker.last_exit_code;
+    }
+
+    pub fn shellStateAlloc(self: *WindowsRuntime, allocator: std.mem.Allocator) !ShellState {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.shell_observer.stateAlloc(allocator);
+    }
+
+    pub fn invokeCommand(self: *WindowsRuntime, command: []const u8) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        const input = try self.shell_observer.buildInvokeInputAlloc(self.allocator, command);
+        defer self.allocator.free(input);
+        try self.input_log.append(.text, command);
+        try self.command_tracker.feedInput(command);
+        try self.command_tracker.feedInput("\r");
+        self.clearSelection();
+        try self.pane.sendInput(input);
+        self.cursor_blink_on = true;
+        self.pane.engine.state.cursor.visible = true;
+        self.pane.scrollViewportToBottom();
+        try self.refreshWindowStateLocked(false);
+    }
+
+    pub fn showStatus(self: *WindowsRuntime, text: []const u8) !void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        try self.setStatusMessage(text);
+        self.requestRepaint();
+    }
+
     fn onTick(ctx: *anyopaque) !void {
         const self: *WindowsRuntime = @ptrCast(@alignCast(ctx));
         self.tick_count += 1;
@@ -293,7 +552,7 @@ const WindowsRuntime = struct {
         paint_mod.paintFrame(canvas, frame, self.config.paint_metrics, self.config.paint_theme);
         if (self.config.show_toolbar and !self.windowIsZen()) {
             const width = self.window.clientWidth() orelse self.config.width;
-            toolbar_mod.paint(canvas, width, self.config.paint_metrics, self.config.paint_theme, self.config.toolbar_height_px, self.toolbar_hover, self.toolbar_pressed);
+            toolbar_mod.paint(canvas, width, self.config.paint_metrics, self.config.paint_theme, self.config.toolbar_height_px, self.toolbar_hover, self.toolbar_pressed, self.config.show_automation_button);
         }
         if (self.mutex.tryLock()) {
             defer self.mutex.unlock();
@@ -590,6 +849,10 @@ const WindowsRuntime = struct {
 
     fn onCommand(ctx: *anyopaque, command_id: u16) !void {
         const self: *WindowsRuntime = @ptrCast(@alignCast(ctx));
+        if (command_id == platform.window.CMD_AUTOMATION_SERVER) {
+            try self.invokeUiAction(.automation_server);
+            return;
+        }
         self.mutex.lock();
         defer self.mutex.unlock();
         switch (command_id) {
@@ -800,7 +1063,7 @@ const WindowsRuntime = struct {
     fn handleToolbarMouse(self: *WindowsRuntime, ev: input_mod.MouseEvent) !bool {
         if (!self.config.show_toolbar or self.windowIsZen()) return false;
         const width = self.window.clientWidth() orelse self.config.width;
-        const layout = toolbar_mod.layout(width, self.config.paint_metrics, self.config.toolbar_height_px);
+        const layout = toolbar_mod.layout(width, self.config.paint_metrics, self.config.toolbar_height_px, self.config.show_automation_button);
         const hovered = layout.hitTest(ev.x, ev.y);
         var needs_repaint = false;
         if (hovered != self.toolbar_hover) {
@@ -842,6 +1105,7 @@ const WindowsRuntime = struct {
 
     fn runToolbarAction(self: *WindowsRuntime, id: toolbar_mod.ButtonId) !void {
         switch (id) {
+            .automation_server => try self.invokeUiAction(.automation_server),
             .screenshot => try self.handleTopLevelFunctionKey(win32.VK_F10),
             .fullscreen => try self.handleTopLevelFunctionKey(win32.VK_F11),
             .zen => try self.handleTopLevelFunctionKey(win32.VK_F12),
@@ -858,6 +1122,14 @@ const WindowsRuntime = struct {
                 self.requestRepaint();
             },
         }
+    }
+
+    fn invokeUiAction(self: *WindowsRuntime, action: Config.UiAction) !void {
+        if (self.config.on_ui_action) |cb| {
+            try cb(self.config.ui_action_ctx orelse return error.MissingUiActionContext, action);
+            return;
+        }
+        try self.showStatus("No automation action configured");
     }
 
     fn handleCopyModeKey(self: *WindowsRuntime, vkey: u32, mods: platform.KeyModifiers) !bool {
@@ -1205,9 +1477,13 @@ const WindowsRuntime = struct {
             if (read > 0 or exited) {
                 self.cursor_blink_on = true;
                 self.pane.engine.state.cursor.visible = true;
+                self.shell_observer.observe(&self.pane.engine.state) catch {};
                 self.refreshPublishedFrameLocked(false) catch {};
                 needs_repaint = true;
-                if (exited) self.child_exit_seen.store(true, .seq_cst);
+                if (exited) {
+                    self.child_exit_seen.store(true, .seq_cst);
+                    self.command_tracker.noteProcessExit(self.pane.ptyExitCode());
+                }
             }
             self.mutex.unlock();
 
@@ -1253,12 +1529,17 @@ const WindowsRuntime = struct {
     fn persistState(self: *WindowsRuntime) !void {
         if (!self.config.persist_state) return;
         const path = self.state_file_path orelse return;
-        const metrics = self.window.metrics();
+        const window_metrics = self.window.metrics();
+        const width = window_metrics.window_rect.right - window_metrics.window_rect.left;
+        const height = window_metrics.window_rect.bottom - window_metrics.window_rect.top;
+        const x = window_metrics.window_rect.left;
+        const y = window_metrics.window_rect.top;
+        if (width < 320 or height < 240) return;
         try settings_mod.save(path, .{
-            .width = metrics.window_rect.right - metrics.window_rect.left,
-            .height = metrics.window_rect.bottom - metrics.window_rect.top,
-            .x = metrics.window_rect.left,
-            .y = metrics.window_rect.top,
+            .width = width,
+            .height = height,
+            .x = x,
+            .y = y,
             .theme = settings_mod.ThemeName.fromPreset(self.config.theme_preset),
         });
     }
