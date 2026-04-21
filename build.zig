@@ -3,6 +3,10 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const has_local_ziggy = blk: {
+        std.fs.cwd().access("../ziggy/src/ziggy.zig", .{}) catch break :blk false;
+        break :blk true;
+    };
 
     const mod = b.createModule(.{
         .root_source_file = b.path("src/fmus.zig"),
@@ -194,6 +198,41 @@ pub fn build(b: *std.Build) void {
     zigsaw_platform_demo.root_module.addImport("fmus", mod);
     b.installArtifact(zigsaw_platform_demo);
 
+    var supabase_ziggy_demo: ?*std.Build.Step.Compile = null;
+    var supabase_ziggy_interactive_demo: ?*std.Build.Step.Compile = null;
+    if (has_local_ziggy) {
+        const ziggy_mod = b.createModule(.{
+            .root_source_file = b.path("../ziggy/src/ziggy.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        const demo = b.addExecutable(.{
+            .name = "fmus-supabase-ziggy-demo",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("examples/supabase_ziggy_demo.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        demo.root_module.addImport("fmus", mod);
+        demo.root_module.addImport("ziggy", ziggy_mod);
+        b.installArtifact(demo);
+        supabase_ziggy_demo = demo;
+
+        const interactive_demo = b.addExecutable(.{
+            .name = "fmus-supabase-ziggy-interactive-demo",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("examples/supabase_ziggy_interactive_demo.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        interactive_demo.root_module.addImport("fmus", mod);
+        interactive_demo.root_module.addImport("ziggy", ziggy_mod);
+        b.installArtifact(interactive_demo);
+        supabase_ziggy_interactive_demo = interactive_demo;
+    }
+
     const tests = b.addTest(.{
         .root_module = mod,
     });
@@ -270,4 +309,22 @@ pub fn build(b: *std.Build) void {
     const run_zigsaw_platform_demo = b.addRunArtifact(zigsaw_platform_demo);
     const zigsaw_platform_demo_step = b.step("example-zigsaw-platform", "Run the zigsaw platform demo");
     zigsaw_platform_demo_step.dependOn(&run_zigsaw_platform_demo.step);
+
+    if (supabase_ziggy_demo) |demo| {
+        const build_step = b.step("example-supabase-ziggy", "Build the Supabase ziggy search demo");
+        build_step.dependOn(&demo.step);
+
+        const run_demo = b.addRunArtifact(demo);
+        const run_step = b.step("run-supabase-ziggy-demo", "Run the Supabase ziggy search demo");
+        run_step.dependOn(&run_demo.step);
+    }
+
+    if (supabase_ziggy_interactive_demo) |demo| {
+        const build_step = b.step("example-supabase-ziggy-interactive", "Build the interactive Supabase ziggy search demo");
+        build_step.dependOn(&demo.step);
+
+        const run_demo = b.addRunArtifact(demo);
+        const run_step = b.step("run-supabase-ziggy-interactive-demo", "Run the interactive Supabase ziggy search demo");
+        run_step.dependOn(&run_demo.step);
+    }
 }

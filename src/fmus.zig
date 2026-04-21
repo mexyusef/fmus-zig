@@ -56,6 +56,7 @@ pub const audit = @import("audit.zig");
 pub const auth = @import("auth.zig");
 pub const oauth = @import("oauth.zig");
 pub const credential = @import("credential.zig");
+pub const supabase = @import("supabase/mod.zig");
 pub const capability = @import("capability.zig");
 pub const plugin_contract = @import("plugin_contract.zig");
 pub const plugin_sdk = @import("plugin_sdk.zig");
@@ -131,6 +132,7 @@ test {
     _ = @import("auth.zig");
     _ = @import("oauth.zig");
     _ = @import("credential.zig");
+    _ = @import("supabase/mod.zig");
     _ = @import("capability.zig");
     _ = @import("plugin_contract.zig");
     _ = @import("plugin_sdk.zig");
