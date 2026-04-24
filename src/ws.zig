@@ -1494,6 +1494,14 @@ test "http server request can be parsed as websocket handshake" {
     const request = http_server.Request{
         .method = "GET",
         .target = "/socket",
+        .version = "HTTP/1.1",
+        .headers = &.{
+            .{ .name = "Host", .value = "localhost" },
+            .{ .name = "Upgrade", .value = "websocket" },
+            .{ .name = "Connection", .value = "Upgrade" },
+            .{ .name = "Sec-WebSocket-Key", .value = "keykeykeykeykeykeykeyk=" },
+            .{ .name = "Sec-WebSocket-Version", .value = "13" },
+        },
         .body = "",
         .raw = raw,
     };

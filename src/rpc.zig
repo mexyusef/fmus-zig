@@ -1,33 +1,32 @@
-const std = @import("std");
-const json = @import("json.zig");
+const jsonrpc = @import("jsonrpc/mod.zig");
 
-pub const Request = struct {
-    id: []const u8,
-    method: []const u8,
-    params_json: ?[]const u8 = null,
-};
+pub const types = jsonrpc.types;
+pub const router = jsonrpc.router;
+pub const stream = jsonrpc.stream;
 
-pub const Response = struct {
-    id: []const u8,
-    ok: bool,
-    result_json: ?[]const u8 = null,
-    error_message: ?[]const u8 = null,
-};
+pub const Id = jsonrpc.Id;
+pub const ErrorObject = jsonrpc.ErrorObject;
+pub const RequestView = jsonrpc.RequestView;
+pub const NotificationView = jsonrpc.NotificationView;
+pub const ResponseView = jsonrpc.ResponseView;
+pub const MessageView = jsonrpc.MessageView;
+pub const RootView = jsonrpc.RootView;
+pub const Document = jsonrpc.Document;
+pub const ParseError = jsonrpc.ParseError;
+pub const StandardErrorCode = jsonrpc.StandardErrorCode;
+pub const Router = jsonrpc.Router;
+pub const DispatchError = jsonrpc.DispatchError;
+pub const StreamConfig = jsonrpc.StreamConfig;
 
-pub fn ok(allocator: std.mem.Allocator, id: []const u8, result: anytype) ![]u8 {
-    const result_json = try json.stringifyAlloc(allocator, result);
-    defer allocator.free(result_json);
-
-    return try json.prettyAlloc(allocator, Response{
-        .id = id,
-        .ok = true,
-        .result_json = result_json,
-    });
-}
-
-test "rpc response encodes ok flag" {
-    const alloc = std.testing.allocator;
-    const out = try ok(alloc, "1", .{ .hello = "world" });
-    defer alloc.free(out);
-    try std.testing.expect(std.mem.indexOf(u8, out, "\"ok\": true") != null);
-}
+pub const parseMessageAlloc = jsonrpc.parseMessageAlloc;
+pub const requestAlloc = jsonrpc.requestAlloc;
+pub const notificationAlloc = jsonrpc.notificationAlloc;
+pub const resultAlloc = jsonrpc.resultAlloc;
+pub const resultJsonAlloc = jsonrpc.resultJsonAlloc;
+pub const errorAlloc = jsonrpc.errorAlloc;
+pub const errorJsonAlloc = jsonrpc.errorJsonAlloc;
+pub const ok = jsonrpc.ok;
+pub const readDelimitedFrameAlloc = jsonrpc.readDelimitedFrameAlloc;
+pub const writeDelimitedFrame = jsonrpc.writeDelimitedFrame;
+pub const readContentLengthFrameAlloc = jsonrpc.readContentLengthFrameAlloc;
+pub const writeContentLengthFrame = jsonrpc.writeContentLengthFrame;

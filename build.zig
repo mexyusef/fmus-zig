@@ -165,6 +165,17 @@ pub fn build(b: *std.Build) void {
     automation_ws_client_demo.root_module.addImport("fmus", mod);
     b.installArtifact(automation_ws_client_demo);
 
+    const jsonrpc_ws_server_demo = b.addExecutable(.{
+        .name = "fmus-jsonrpc-ws-server-demo",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/jsonrpc_ws_server_demo.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    jsonrpc_ws_server_demo.root_module.addImport("fmus", mod);
+    b.installArtifact(jsonrpc_ws_server_demo);
+
     const zigsaw_demo = b.addExecutable(.{
         .name = "fmus-zigsaw-foundation-demo",
         .root_module = b.createModule(.{
@@ -297,6 +308,10 @@ pub fn build(b: *std.Build) void {
     const run_automation_ws_client_demo = b.addRunArtifact(automation_ws_client_demo);
     const automation_ws_client_demo_step = b.step("example-terminal-automation-ws-client", "Run the terminal automation websocket client demo");
     automation_ws_client_demo_step.dependOn(&run_automation_ws_client_demo.step);
+
+    const run_jsonrpc_ws_server_demo = b.addRunArtifact(jsonrpc_ws_server_demo);
+    const jsonrpc_ws_server_demo_step = b.step("example-jsonrpc-ws-server", "Run the JSON-RPC websocket server demo");
+    jsonrpc_ws_server_demo_step.dependOn(&run_jsonrpc_ws_server_demo.step);
 
     const run_zigsaw_demo = b.addRunArtifact(zigsaw_demo);
     const zigsaw_demo_step = b.step("example-zigsaw", "Run the zigsaw foundation demo");
